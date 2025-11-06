@@ -105,10 +105,22 @@
 <div class="landing-section">
     <h2>Courses Offered</h2>
     <div class="courses-grid">
+        {% set image_map = {
+            'Java': 'java.png',
+            'Python': 'python.png',
+            'C++': 'c++.png',
+            'SQL': 'sql.png',
+            'Computer Networks': 'networking.png',
+            'Office Automation Tools': 'office.png',
+            'Use of AI': 'ai.png'
+        } %}
         {% for course in courses[:8] %}
+        {% set image_file = image_map.get(course.title) %}
         <div class="course-card">
             <div class="course-icon-wrapper">
-                {% if course.thumbnail %}
+                {% if image_file %}
+                <img src="{{ url_for('static', filename='img/' ~ image_file) }}" alt="{{ course.title }}" class="course-thumbnail-img">
+                {% elif course.thumbnail %}
                 <img src="{{ course.thumbnail }}" alt="{{ course.title }}" class="course-thumbnail-img">
                 {% else %}
                 <div class="course-thumbnail">{{ course.title[0] }}</div>

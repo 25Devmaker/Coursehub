@@ -32,7 +32,19 @@
 {% block content %}
 <div class="course-view-container">
     <div class="course-header">
-        {% if course.thumbnail %}
+        {% set image_map = {
+            'Java': 'java.png',
+            'Python': 'python.png',
+            'C++': 'c++.png',
+            'SQL': 'sql.png',
+            'Computer Networks': 'networking.png',
+            'Office Automation Tools': 'office.png',
+            'Use of AI': 'ai.png'
+        } %}
+        {% set image_file = image_map.get(course.title) %}
+        {% if image_file %}
+        <img src="{{ url_for('static', filename='img/' ~ image_file) }}" alt="{{ course.title }}" class="course-thumbnail-large-img">
+        {% elif course.thumbnail %}
         <img src="{{ course.thumbnail }}" alt="{{ course.title }}" class="course-thumbnail-large-img">
         {% else %}
         <div class="course-thumbnail-large">{{ course.title[0] }}</div>
@@ -71,6 +83,12 @@
                 <p>Select a chapter from the sidebar to start learning.</p>
                 {% if chapters %}
                 <a href="{{ url_for('view_chapter', chapter_id=chapters[0].id) }}" class="btn btn-primary">Start with Chapter 1</a>
+                {% endif %}
+                {% if all_completed %}
+                <div style="margin-top: 24px;">
+                    <p>Congratulations! You have completed all chapters.</p>
+                    <a class="btn btn-primary" href="{{ url_for('certificate', course_id=course.id) }}">Download Certificate (PDF)</a>
+                </div>
                 {% endif %}
             </div>
         </div>

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Group Chat - CourseHub Admin{% endblock %}
+
+{% block content %}
+<div class="chat-container">
+  <div class="chat-card">
+    <div class="chat-header">
+      <strong>Group Chat</strong>
+      <span style="color: var(--text-secondary); font-size: 13px;">(Admins ↔ All Students)</span>
+    </div>
+    <div class="chat-body" id="chatBody"></div>
+    <div class="chat-input">
+      <input id="chatInput" type="text" placeholder="Type a message to all students..." />
+      <button class="btn btn-primary" onclick="sendBroadcast()">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const bodyEl = document.getElementById('chatBody');
+function scrollBottom(){ bodyEl.scrollTop = bodyEl.scrollHeight; }
+
+function escapeHtml(str){
+  const p = document.createElement('p');
+  p.appendChild(document.createTextNode(str));
+  return p.innerHTML;
+}
+
+function renderMessage(msg){
+  const wrap = document.createElement('div');
+  const isAdmin = msg.sender_type === 'admin';
+  wrap.className = 'msg ' + (isAdmin ? 'me' : 'them');
+  const label = isAdmin ? 'Admin' : msg.sender;
+  const time = msg.time || '';
+  wrap.innerHTML = `<div class="bubble"><strong style=\"display:block; font-size:12px; color: var(--text-secondary);\">${label}</strong>${escapeHtml(msg.message)}<span class=\"time\">${time}</span></div>`;
+  bodyEl.appendChild(wrap);
+}
+
+function loadHistory(){
+  fetch('/api/chat/history-all')
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.success){
+        bodyEl.innerHTML = '';
+        d.messages.forEach(renderMessage);
+        scrollBottom();
+      }
+    });
+}
+
+function sendBroadcast(){
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if(!text) return;
+  fetch('/api/chat/send-admin-broadcast', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: text })
+  }).then(r=>r.json()).then(d=>{
+    if(d.success){
+      input.value = '';
+      loadHistory();
+    }
+  });
+}
+
+// Initial load + polling
+loadHistory();
+setInterval(loadHistory, 5000);
+</script>
+{% endblock %}
+
+

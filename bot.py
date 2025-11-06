@@ -10,8 +10,8 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 import os
 
-# Database path
-DB_PATH = 'coursehub.db'
+# Database path (match Flask default instance path)
+DB_PATH = os.environ.get('SQLITE_PATH', os.path.join(os.path.dirname(__file__), 'instance', 'coursehub.db'))
 
 # Email configuration (same as app.py)
 MAIL_SERVER = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')

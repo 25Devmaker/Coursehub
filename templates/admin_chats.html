@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Chats - CourseHub Admin{% endblock %}
+
+{% block content %}
+<div class="chat-container">
+  <h1>Student Chats</h1>
+  <div class="chat-list">
+    {% if students %}
+      {% for s in students %}
+        <a href="{{ url_for('admin_chat', student_id=s.id) }}">{{ s.name }} ({{ s.usn }})</a>
+      {% endfor %}
+    {% else %}
+      <p class="empty-state">No chats yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+

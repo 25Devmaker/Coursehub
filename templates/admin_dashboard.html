@@ -97,10 +97,22 @@
             <h2>Recent Courses</h2>
         </div>
         <div class="courses-grid">
+            {% set image_map = {
+                'Java': 'java.png',
+                'Python': 'python.png',
+                'C++': 'c++.png',
+                'SQL': 'sql.png',
+                'Computer Networks': 'networking.png',
+                'Office Automation Tools': 'office.png',
+                'Use of AI': 'ai.png'
+            } %}
             {% for course in courses %}
+            {% set image_file = image_map.get(course.title) %}
             <div class="course-card">
                 <div class="course-icon-wrapper">
-                    {% if course.thumbnail %}
+                    {% if image_file %}
+                    <img src="{{ url_for('static', filename='img/' ~ image_file) }}" alt="{{ course.title }}" class="course-thumbnail-img">
+                    {% elif course.thumbnail %}
                     <img src="{{ course.thumbnail }}" alt="{{ course.title }}" class="course-thumbnail-img">
                     {% else %}
                     <div class="course-thumbnail">{{ course.title[0] }}</div>
@@ -141,7 +153,7 @@
 <script>
 // Monthly Enrollments Bar Chart
 const monthlyCtx = document.getElementById('monthlyChart').getContext('2d');
-const monthlyData = {{ monthly_data|tojson }};
+const monthlyData = JSON.parse('{{ monthly_data|tojson }}');
 const monthlyLabels = Object.keys(monthlyData).sort();
 const monthlyValues = monthlyLabels.map(key => monthlyData[key]);
 
@@ -191,7 +203,7 @@ new Chart(monthlyCtx, {
 
 // Course-wise Pie Chart
 const courseCtx = document.getElementById('courseChart').getContext('2d');
-const courseData = {{ course_data|tojson }};
+const courseData = JSON.parse('{{ course_data|tojson }}');
 const courseLabels = Object.keys(courseData);
 const courseValues = Object.values(courseData);
 

@@ -5,15 +5,25 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 import datetime
 import os
-from threading import Timer
+from threading import Timer, Thread
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from ai_learning_tracker import AILearningTracker
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
+from io import BytesIO
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-change-in-production'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///coursehub.db'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
+
+# Ensure instance folder for sqlite exists
+os.makedirs(os.path.join(app.root_path, 'instance'), exist_ok=True)
+
+# Database URL with default to instance sqlite file
+default_sqlite_path = os.path.join(app.root_path, 'instance', 'coursehub.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', f'sqlite:///{default_sqlite_path}')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
@@ -97,6 +107,14 @@ class Notification(db.Model):
     read = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
+class ChatMessage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    admin_id = db.Column(db.Integer, db.ForeignKey('admin.id'), nullable=True)
+    sender = db.Column(db.String(10), nullable=False)  # 'student' or 'admin'
+    message = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
 # Email sending function
 def send_email(to_email, subject, body):
     try:
@@ -136,6 +154,63 @@ def auto_approve_enrollment(enrollment_id):
         )
         db.session.add(notification)
         db.session.commit()
+
+def background_auto_approver_loop():
+    from time import sleep
+    # Ensure DB ops run inside app context when started by a thread/gunicorn
+    with app.app_context():
+        while True:
+            try:
+                cutoff = datetime.datetime.utcnow() - datetime.timedelta(minutes=5)
+                pending = Enrollment.query.filter(Enrollment.status == 'pending', Enrollment.enrolled_at <= cutoff).all()
+                for enrollment in pending:
+                    enrollment.status = 'approved'
+                    enrollment.approved_at = datetime.datetime.utcnow()
+                    db.session.add(enrollment)
+                    # notify
+                    student = User.query.get(enrollment.student_id)
+                    course = Course.query.get(enrollment.course_id)
+                    if student and course:
+                        note = Notification(
+                            user_id=student.id,
+                            message=f"Your enrollment for {course.title} has been auto-approved!",
+                            type='success'
+                        )
+                        db.session.add(note)
+                if pending:
+                    db.session.commit()
+            except Exception as e:
+                print('Auto-approver error:', e)
+                db.session.rollback()
+            finally:
+                sleep(60)
+
+# Initialize DB and seed data at import time (works for gunicorn too)
+with app.app_context():
+    db.create_all()
+    if Course.query.count() == 0:
+        courses_data = [
+            {'title': 'Java', 'description': 'Learn Java programming from basics to advanced', 'total_chapters': 10, 'total_hours': 40, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/java/java-original.svg'},
+            {'title': 'Python', 'description': 'Master Python programming and applications', 'total_chapters': 12, 'total_hours': 50, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg'},
+            {'title': 'C++', 'description': 'Comprehensive C++ programming course', 'total_chapters': 10, 'total_hours': 45, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/cplusplus/cplusplus-original.svg'},
+            {'title': 'C', 'description': 'Fundamentals of C programming language', 'total_chapters': 8, 'total_hours': 35, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/c/c-original.svg'},
+            {'title': 'Computer Networks', 'description': 'Learn networking concepts and protocols', 'total_chapters': 15, 'total_hours': 60, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/ubuntu/ubuntu-plain.svg'},
+            {'title': 'Office Automation Tools', 'description': 'Master Microsoft Office and automation', 'total_chapters': 8, 'total_hours': 30, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/windows8/windows8-original.svg'},
+            {'title': 'SQL', 'description': 'Database management and SQL queries', 'total_chapters': 10, 'total_hours': 40, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/mysql/mysql-original.svg'},
+            {'title': 'Use of AI', 'description': 'Introduction to Artificial Intelligence and applications', 'total_chapters': 12, 'total_hours': 50, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/tensorflow/tensorflow-original.svg'}
+        ]
+        for course_data in courses_data:
+            db.session.add(Course(**course_data))
+        db.session.commit()
+
+# Optionally start background approver in web process (single worker)
+if os.environ.get('ENABLE_AUTO_APPROVER', '1') == '1':
+    try:
+        t = Thread(target=background_auto_approver_loop, daemon=True)
+        t.start()
+        print('Background auto-approver started')
+    except Exception as e:
+        print('Failed to start background auto-approver:', e)
 
 # Routes
 @app.route('/')
@@ -318,6 +393,22 @@ def admin_profile():
     admin = Admin.query.get(session['admin_id'])
     return render_template('admin_profile.html', admin=admin)
 
+@app.route('/admin/delete-account', methods=['POST'])
+def admin_delete_account():
+    if 'admin_id' not in session:
+        return redirect(url_for('login'))
+    admin = Admin.query.get(session['admin_id'])
+    if not admin:
+        session.clear()
+        return redirect(url_for('landing'))
+    # Detach admin_id from chat messages to avoid FK issues
+    ChatMessage.query.filter_by(admin_id=admin.id).update({ChatMessage.admin_id: None})
+    db.session.delete(admin)
+    db.session.commit()
+    session.clear()
+    flash('Your admin account has been deleted.', 'success')
+    return redirect(url_for('landing'))
+
 @app.route('/enroll/<int:course_id>')
 def enroll(course_id):
     if 'user_id' not in session:
@@ -377,10 +468,13 @@ def view_course(course_id):
         ).first()
         progress[chapter.id] = student_progress.completed if student_progress else False
     
+    # Determine completion
+    all_completed = all(progress.get(ch.id, False) for ch in chapters) if chapters else False
     return render_template('course_view.html', 
                          course=course, 
                          chapters=chapters,
-                         progress=progress)
+                         progress=progress,
+                         all_completed=all_completed)
 
 @app.route('/chapter/<int:chapter_id>')
 def view_chapter(chapter_id):
@@ -419,6 +513,72 @@ def view_chapter(chapter_id):
                          prev_chapter=prev_chapter,
                          next_chapter=next_chapter,
                          progress=student_progress)
+
+@app.route('/certificate/<int:course_id>')
+def certificate(course_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    user = User.query.get(session['user_id'])
+    course = Course.query.get_or_404(course_id)
+    # Verify full completion
+    chapters = Chapter.query.filter_by(course_id=course_id).all()
+    if not chapters:
+        flash('No chapters found for this course', 'error')
+        return redirect(url_for('view_course', course_id=course_id))
+    completed_count = StudentProgress.query.filter_by(student_id=user.id, course_id=course_id, completed=True).count()
+    if completed_count < len(chapters):
+        flash('Complete all chapters to download the certificate', 'error')
+        return redirect(url_for('view_course', course_id=course_id))
+
+    # Generate certificate PDF in memory
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    # Try to draw a background image if available
+    import os
+    bg_path = os.path.join(app.root_path, 'static', 'img', 'certificate_bg.png')
+    try:
+        if os.path.exists(bg_path):
+            pdf.drawImage(ImageReader(bg_path), 0, 0, width=width, height=height)
+    except Exception as e:
+        print('Certificate background error:', e)
+
+    # Title
+    pdf.setFillColorRGB(0.82, 0.05, 0.05)  # accent-ish
+    pdf.setFont('Helvetica-Bold', 28)
+    pdf.drawCentredString(width/2, height-120, 'CERTIFICATE OF COMPLETION')
+
+    # Presented to
+    pdf.setFillColorRGB(1,1,1)
+    pdf.setFont('Helvetica', 14)
+    pdf.drawCentredString(width/2, height-160, f'is presented to')
+
+    # Name
+    pdf.setFillColorRGB(1,1,1)
+    pdf.setFont('Helvetica-Bold', 24)
+    pdf.drawCentredString(width/2, height-200, user.name)
+
+    # Course
+    pdf.setFont('Helvetica', 14)
+    pdf.drawCentredString(width/2, height-230, f'for successfully completing {course.title}')
+
+    # Date
+    pdf.setFont('Helvetica-Oblique', 12)
+    pdf.drawCentredString(width/2, height-260, datetime.datetime.utcnow().strftime('Dated: %d %B %Y (UTC)'))
+
+    # Seal
+    pdf.circle(width/2, 140, 28, stroke=1, fill=0)
+    pdf.setFont('Helvetica', 10)
+    pdf.drawCentredString(width/2, 120, 'CourseHub')
+
+    pdf.showPage()
+    pdf.save()
+    buffer.seek(0)
+
+    from flask import send_file
+    filename = f'CourseHub-Certificate-{course.title}-{user.name}.pdf'
+    return send_file(buffer, as_attachment=True, download_name=filename, mimetype='application/pdf')
 
 @app.route('/complete-checkpoint/<int:chapter_id>', methods=['POST'])
 def complete_checkpoint(chapter_id):
@@ -596,6 +756,134 @@ def admin_students():
     students = User.query.all()
     return render_template('admin_students.html', students=students)
 
+# Chat - Student view
+@app.route('/chat')
+def chat():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    student_id = session['user_id']
+    messages = ChatMessage.query.filter_by(student_id=student_id).order_by(ChatMessage.created_at).all()
+    return render_template('chat.html', messages=messages)
+
+# Chat - Admin list and per-student view
+@app.route('/admin/chats')
+def admin_chats():
+    if 'admin_id' not in session:
+        return redirect(url_for('login'))
+    # distinct students with messages
+    student_ids = db.session.query(ChatMessage.student_id).distinct().all()
+    students = User.query.filter(User.id.in_([sid for (sid,) in student_ids])).all()
+    return render_template('admin_chats.html', students=students)
+
+@app.route('/admin/group-chat')
+def admin_group_chat():
+    if 'admin_id' not in session:
+        return redirect(url_for('login'))
+    return render_template('admin_group_chat.html')
+
+@app.route('/admin/student-group-chat')
+def admin_student_group_chat():
+    if 'admin_id' not in session:
+        return redirect(url_for('login'))
+    return render_template('admin_student_group_chat.html')
+
+@app.route('/admin/chat/<int:student_id>')
+def admin_chat(student_id):
+    if 'admin_id' not in session:
+        return redirect(url_for('login'))
+    messages = ChatMessage.query.filter_by(student_id=student_id).order_by(ChatMessage.created_at).all()
+    student = User.query.get_or_404(student_id)
+    return render_template('admin_chat.html', messages=messages, student=student)
+
+@app.route('/api/chat/send', methods=['POST'])
+def api_chat_send():
+    data = request.json or {}
+    text = data.get('message', '').strip()
+    student_id = data.get('student_id')
+    if not text:
+        return jsonify({'success': False})
+    if 'user_id' in session:
+        # student sending
+        msg = ChatMessage(student_id=session['user_id'], admin_id=None, sender='student', message=text)
+        db.session.add(msg)
+        db.session.commit()
+        return jsonify({'success': True, 'id': msg.id, 'time': msg.created_at.strftime('%H:%M')})
+    elif 'admin_id' in session:
+        if not student_id:
+            return jsonify({'success': False})
+        msg = ChatMessage(student_id=student_id, admin_id=session['admin_id'], sender='admin', message=text)
+        db.session.add(msg)
+        db.session.commit()
+        return jsonify({'success': True, 'id': msg.id, 'time': msg.created_at.strftime('%H:%M')})
+    return jsonify({'success': False})
+
+@app.route('/api/chat/history/<int:student_id>')
+def api_chat_history(student_id):
+    if 'user_id' in session and session['user_id'] != student_id:
+        return jsonify({'success': False})
+    if 'admin_id' not in session and 'user_id' not in session:
+        return jsonify({'success': False})
+    messages = ChatMessage.query.filter_by(student_id=student_id).order_by(ChatMessage.created_at).all()
+    out = [
+        {
+            'id': m.id,
+            'sender': m.sender,
+            'message': m.message,
+            'time': m.created_at.strftime('%Y-%m-%d %H:%M')
+        } for m in messages
+    ]
+    return jsonify({'success': True, 'messages': out})
+
+@app.route('/api/chat/history-all')
+def api_chat_history_all():
+    if 'admin_id' not in session:
+        return jsonify({'success': False})
+    messages = ChatMessage.query.order_by(ChatMessage.created_at).all()
+    # Build sender display
+    def sender_of(m):
+        return 'admin' if m.sender == 'admin' else (User.query.get(m.student_id).name if m.student_id else 'Student')
+    out = [
+        {
+            'id': m.id,
+            'sender': sender_of(m),
+            'sender_type': 'admin' if m.sender == 'admin' else 'student',
+            'message': m.message,
+            'time': m.created_at.strftime('%Y-%m-%d %H:%M')
+        } for m in messages
+    ]
+    return jsonify({'success': True, 'messages': out})
+
+@app.route('/api/chat/history-students')
+def api_chat_history_students():
+    if 'admin_id' not in session:
+        return jsonify({'success': False})
+    messages = ChatMessage.query.filter(ChatMessage.sender == 'student').order_by(ChatMessage.created_at).all()
+    out = [
+        {
+            'id': m.id,
+            'sender': (User.query.get(m.student_id).name if m.student_id else 'Student'),
+            'message': m.message,
+            'time': m.created_at.strftime('%Y-%m-%d %H:%M')
+        } for m in messages
+    ]
+    return jsonify({'success': True, 'messages': out})
+
+@app.route('/api/chat/send-admin-broadcast', methods=['POST'])
+def api_chat_send_admin_broadcast():
+    if 'admin_id' not in session:
+        return jsonify({'success': False})
+    data = request.json or {}
+    text = (data.get('message') or '').strip()
+    if not text:
+        return jsonify({'success': False})
+    # Fan-out to all students (who exist). Could be optimized later.
+    students = User.query.all()
+    for s in students:
+        msg = ChatMessage(student_id=s.id, admin_id=session['admin_id'], sender='admin', message=text)
+        db.session.add(msg)
+    db.session.commit()
+    return jsonify({'success': True})
+
 @app.route('/admin/student-progress/<int:student_id>')
 def admin_student_progress(student_id):
     if 'admin_id' not in session:
@@ -739,27 +1027,4 @@ def learning_report(course_id):
         return jsonify({'error': 'No progress data found'})
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-        
-        # Initialize courses if they don't exist
-        if Course.query.count() == 0:
-            courses_data = [
-                {'title': 'Java', 'description': 'Learn Java programming from basics to advanced', 'total_chapters': 10, 'total_hours': 40, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/java/java-original.svg'},
-                {'title': 'Python', 'description': 'Master Python programming and applications', 'total_chapters': 12, 'total_hours': 50, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg'},
-                {'title': 'C++', 'description': 'Comprehensive C++ programming course', 'total_chapters': 10, 'total_hours': 45, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/cplusplus/cplusplus-original.svg'},
-                {'title': 'C', 'description': 'Fundamentals of C programming language', 'total_chapters': 8, 'total_hours': 35, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/c/c-original.svg'},
-                {'title': 'Computer Networks', 'description': 'Learn networking concepts and protocols', 'total_chapters': 15, 'total_hours': 60, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/ubuntu/ubuntu-plain.svg'},
-                {'title': 'Office Automation Tools', 'description': 'Master Microsoft Office and automation', 'total_chapters': 8, 'total_hours': 30, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/windows8/windows8-original.svg'},
-                {'title': 'SQL', 'description': 'Database management and SQL queries', 'total_chapters': 10, 'total_hours': 40, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/mysql/mysql-original.svg'},
-                {'title': 'Use of AI', 'description': 'Introduction to Artificial Intelligence and applications', 'total_chapters': 12, 'total_hours': 50, 'thumbnail': 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/tensorflow/tensorflow-original.svg'}
-            ]
-            
-            for course_data in courses_data:
-                course = Course(**course_data)
-                db.session.add(course)
-        
-        db.session.commit()
-    
-    app.run(debug=True)
-
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)

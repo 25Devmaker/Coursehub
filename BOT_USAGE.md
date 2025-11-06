@@ -22,6 +22,7 @@ A standalone bot that checks for pending enrollments every minute.
 **Step 2:** Navigate to project directory:
 ```bash
 cd C:\Users\Administrator\Videos\coursehub
+
 ```
 
 **Step 3:** Run the bot:

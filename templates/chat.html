@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Feedback Chat - CourseHub{% endblock %}
+
+{% block content %}
+<div class="chat-container" data-student-id="{{ session['user_id'] }}">
+  <div class="chat-card">
+    <div class="chat-header">
+      <strong>Feedback Chat</strong>
+      <span style="color: var(--text-secondary); font-size: 13px;">(Student ↔ Admin)</span>
+    </div>
+    <div class="chat-body" id="chatBody">
+      {% for m in messages %}
+      <div class="msg {% if m.sender == 'student' %}me{% else %}them{% endif %}">
+        <div class="bubble">
+          {{ m.message }}
+          <span class="time">{{ m.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="chat-input">
+      <input id="chatInput" type="text" placeholder="Type your message..." />
+      <button class="btn btn-primary" onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const bodyEl = document.getElementById('chatBody');
+function scrollBottom(){ bodyEl.scrollTop = bodyEl.scrollHeight; }
+scrollBottom();
+
+function renderMessage(msg){
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ' + (msg.sender === 'student' ? 'me' : 'them');
+  wrap.innerHTML = `<div class="bubble">${escapeHtml(msg.message)}<span class="time">${msg.time}</span></div>`;
+  bodyEl.appendChild(wrap);
+  scrollBottom();
+}
+
+function sendMessage(){
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if(!text) return;
+  fetch('/api/chat/send', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: text })
+  }).then(r=>r.json()).then(d=>{
+    if(d.success){
+      renderMessage({ sender:'student', message:text, time:d.time });
+      input.value='';
+    }
+  });
+}
+
+function escapeHtml(str){
+  const p = document.createElement('p');
+  p.appendChild(document.createTextNode(str));
+  return p.innerHTML;
+}
+
+// Simple polling to update new admin messages
+const studentId = document.querySelector('.chat-container').dataset.studentId;
+setInterval(()=>{
+  fetch('/api/chat/history/' + encodeURIComponent(studentId))
+    .then(r=>r.json()).then(d=>{
+      if(d.success){
+        bodyEl.innerHTML = '';
+        d.messages.forEach(renderMessage);
+      }
+    });
+}, 5000);
+</script>
+{% endblock %}
+
+

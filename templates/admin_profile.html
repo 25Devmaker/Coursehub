@@ -33,6 +33,11 @@
                 <p>{{ admin.created_at.strftime('%B %d, %Y') }}</p>
             </div>
         </div>
+        <div style="margin-top:16px; display:flex; gap:12px;">
+            <form method="POST" action="{{ url_for('admin_delete_account') }}" onsubmit="return confirm('Delete this admin account? This action cannot be undone.');">
+                <button class="btn btn-secondary" type="submit" style="background: transparent; border:1px solid var(--accent); color: var(--accent);">Delete Account</button>
+            </form>
+        </div>
     </div>
 </div>
 {% endblock %}

@@ -9,15 +9,22 @@
             <h1>Welcome, {{ user.name }}!</h1>
             <p>Continue your learning journey</p>
         </div>
-        {% if notifications %}
-        <div class="notification-bell" id="notificationBell">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-            </svg>
-            <span class="notification-badge">{{ notifications|length }}</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+            <a href="{{ url_for('chat') }}" class="notification-bell" title="Chat">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a4 4 0 0 1-4 4H8l-5 3 1.5-4.5A4 4 0 0 1 1 14V7a4 4 0 0 1 4-4h12a4 4 0 0 1 4 4z"></path>
+                </svg>
+            </a>
+            {% if notifications %}
+            <div class="notification-bell" id="notificationBell">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                <span class="notification-badge">{{ notifications|length }}</span>
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
     </div>
 </div>
 
@@ -53,11 +60,23 @@
         {% if enrollments %}
         <div class="courses-grid">
             {% for enrollment in enrollments %}
+                {% set image_map = {
+                        'Java': 'java.png',
+                        'Python': 'python.png',
+                        'C++': 'c++.png',
+                        'SQL': 'sql.png',
+                        'Computer Networks': 'networking.png',
+                        'Office Automation Tools': 'office.png',
+                        'Use of AI': 'ai.png'
+                    } %}
                 {% if enrollment.status == 'approved' %}
                 <div class="course-card">
                     <div class="course-status approved">Approved</div>
+                    {% set image_file = image_map.get(enrollment.course.title) %}
                     <div class="course-icon-wrapper">
-                        {% if enrollment.course.thumbnail %}
+                        {% if image_file %}
+                        <img src="{{ url_for('static', filename='img/' ~ image_file) }}" alt="{{ enrollment.course.title }}" class="course-thumbnail-img">
+                        {% elif enrollment.course.thumbnail %}
                         <img src="{{ enrollment.course.thumbnail }}" alt="{{ enrollment.course.title }}" class="course-thumbnail-img">
                         {% else %}
                         <div class="course-thumbnail">{{ enrollment.course.title[0] }}</div>
@@ -90,8 +109,11 @@
                 {% elif enrollment.status == 'pending' %}
                 <div class="course-card">
                     <div class="course-status pending">Pending Approval</div>
+                    {% set image_file = image_map.get(enrollment.course.title) %}
                     <div class="course-icon-wrapper">
-                        {% if enrollment.course.thumbnail %}
+                        {% if image_file %}
+                        <img src="{{ url_for('static', filename='img/' ~ image_file) }}" alt="{{ enrollment.course.title }}" class="course-thumbnail-img">
+                        {% elif enrollment.course.thumbnail %}
                         <img src="{{ enrollment.course.thumbnail }}" alt="{{ enrollment.course.title }}" class="course-thumbnail-img">
                         {% else %}
                         <div class="course-thumbnail">{{ enrollment.course.title[0] }}</div>
@@ -135,8 +157,20 @@
         <div class="courses-grid">
             {% for course in available_courses %}
             <div class="course-card">
+                {% set image_map = {
+                    'Java': 'java.png',
+                    'Python': 'python.png',
+                    'C++': 'c++.png',
+                    'SQL': 'sql.png',
+                    'Computer Networks': 'networking.png',
+                    'Office Automation Tools': 'office.png',
+                    'Use of AI': 'ai.png'
+                } %}
+                {% set image_file = image_map.get(course.title) %}
                 <div class="course-icon-wrapper">
-                    {% if course.thumbnail %}
+                    {% if image_file %}
+                    <img src="{{ url_for('static', filename='img/' ~ image_file) }}" alt="{{ course.title }}" class="course-thumbnail-img">
+                    {% elif course.thumbnail %}
                     <img src="{{ course.thumbnail }}" alt="{{ course.title }}" class="course-thumbnail-img">
                     {% else %}
                     <div class="course-thumbnail">{{ course.title[0] }}</div>

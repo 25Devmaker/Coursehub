@@ -1348,6 +1348,23 @@ tbody tr:hover {
   opacity: 0.6;
 }
 
+/* Chat (Telegram-like) */
+.chat-container { max-width: 900px; margin: 0 auto; }
+.chat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.chat-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+.chat-body { padding: 16px; height: 60vh; overflow-y: auto; background: var(--bg); }
+.chat-input { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); background: var(--surface); }
+.chat-input input { flex: 1; }
+.msg { display: flex; margin: 8px 0; }
+.msg .bubble { max-width: 70%; padding: 10px 14px; border-radius: 14px; position: relative; }
+.msg.me { justify-content: flex-end; }
+.msg.me .bubble { background: hsl(210 14% 22%); border: 1px solid var(--border); }
+.msg.them .bubble { background: hsl(0 0% 14%); border: 1px solid var(--border); }
+.msg .time { display: block; margin-top: 6px; font-size: 11px; color: var(--text-secondary); text-align: right; }
+.chat-list { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+.chat-list a { display: block; padding: 10px 12px; border-radius: 8px; color: var(--text); text-decoration: none; }
+.chat-list a:hover { background: var(--border); }
+
 /* Code Editor */
 .code-editor-container {
   margin: 24px 0;
