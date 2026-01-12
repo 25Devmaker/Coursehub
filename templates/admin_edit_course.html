@@ -38,7 +38,7 @@
             <div class="form-actions">
                 <button type="submit" class="btn btn-primary">Update Course</button>
                 <a href="{{ url_for('admin_courses') }}" class="btn btn-secondary">Cancel</a>
-                <a href="{{ url_for('admin_add_chapter', course_id=course.id) }}" class="btn btn-secondary">Add Chapter</a>
+               <!-- <a href="{{ url_for('admin_add_chapter', course_id=course.id) }}" class="btn btn-secondary">Add Chapter</a> -->
                 <a href="{{ url_for('admin_upload_file', course_id=course.id) }}" class="btn btn-secondary">Upload Files</a>
             </div>
         </form>
