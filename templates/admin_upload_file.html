@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Files - {{ course.title }} - CourseHub{% endblock %}
+
+{% block extra_css %}
+<style>
+    .upload-area {
+        border: 2px dashed hsl(0 0% 30%);
+        border-radius: 12px;
+        padding: 40px;
+        text-align: center;
+        background: hsl(0 0% 10%);
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin-bottom: 30px;
+    }
+    .upload-area:hover {
+        border-color: hsl(217 91% 60%);
+        background: hsl(0 0% 12%);
+    }
+    .upload-area.drag-over {
+        border-color: hsl(217 91% 60%);
+        background: hsl(217 91% 60% / 0.1);
+    }
+    .upload-area-icon {
+        font-size: 48px;
+        margin-bottom: 16px;
+        opacity: 0.7;
+    }
+    .upload-area-text {
+        font-size: 1.1em;
+        color: hsl(0 0% 70%);
+        margin-bottom: 8px;
+    }
+    .upload-area-hint {
+        font-size: 0.9em;
+        color: hsl(0 0% 50%);
+    }
+    .file-input-hidden {
+        display: none;
+    }
+    .selected-files {
+        margin-top: 20px;
+        padding: 20px;
+        background: hsl(0 0% 12%);
+        border-radius: 8px;
+        display: none;
+    }
+    .selected-files.show {
+        display: block;
+    }
+    .file-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px;
+        background: hsl(0 0% 8%);
+        border-radius: 6px;
+        margin-bottom: 8px;
+    }
+    .file-item-info {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .file-item-name {
+        color: hsl(0 0% 85%);
+        font-weight: 500;
+    }
+    .file-item-size {
+        color: hsl(0 0% 60%);
+        font-size: 0.9em;
+    }
+    .file-item-remove {
+        background: hsl(0 70% 50%);
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+    }
+    .file-item-remove:hover {
+        background: hsl(0 70% 45%);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="form-card">
+        <h2>Upload Files for {{ course.title }}</h2>
+        
+        <div style="margin-bottom: 30px;">
+            <a href="{{ url_for('admin_edit_course', course_id=course.id) }}" class="btn btn-secondary">← Back to Course</a>
+        </div>
+        
+        <form method="POST" action="{{ url_for('admin_upload_file', course_id=course.id) }}" enctype="multipart/form-data" id="uploadForm">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-area-icon">📁</div>
+                <div class="upload-area-text">Drag and drop files here</div>
+                <div class="upload-area-hint">or click to browse</div>
+                <input type="file" id="file" name="file" accept=".pdf,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.bmp,.svg,.webp" class="file-input-hidden" multiple>
+            </div>
+            
+            <div class="selected-files" id="selectedFiles">
+                <h4 style="margin-bottom: 16px; color: hsl(0 0% 80%);">Selected Files:</h4>
+                <div id="fileList"></div>
+            </div>
+            
+            <small style="color: hsl(0 0% 60%); display: block; margin-bottom: 20px;">Maximum file size: 100MB per file. Allowed formats: PDF, PPT, PPTX, JPG, JPEG, PNG, GIF, BMP, SVG, WEBP</small>
+            
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary" id="uploadBtn" disabled>Upload Files</button>
+            </div>
+        </form>
+
+        {% if files %}
+        <div class="files-list" style="margin-top: 40px;">
+            <h3>Uploaded Files</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                <thead>
+                    <tr style="border-bottom: 2px solid hsl(0 0% 20%);">
+                        <th style="padding: 12px; text-align: left;">File Name</th>
+                        <th style="padding: 12px; text-align: left;">Type</th>
+                        <th style="padding: 12px; text-align: left;">Size</th>
+                        <th style="padding: 12px; text-align: left;">Uploaded At</th>
+                        <th style="padding: 12px; text-align: left;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file in files %}
+                    <tr style="border-bottom: 1px solid hsl(0 0% 15%);">
+                        <td style="padding: 12px;">{{ file.original_filename }}</td>
+                        <td style="padding: 12px; text-transform: uppercase;">{{ file.file_type }}</td>
+                        <td style="padding: 12px;">
+                            {% if file.file_size < 1024 %}
+                                {{ file.file_size }} B
+                            {% elif file.file_size < 1024 * 1024 %}
+                                {{ "%.2f"|format(file.file_size / 1024) }} KB
+                            {% else %}
+                                {{ "%.2f"|format(file.file_size / (1024 * 1024)) }} MB
+                            {% endif %}
+                        </td>
+                        <td style="padding: 12px;">{{ file.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td style="padding: 12px;">
+                            <form method="POST" action="{{ url_for('admin_delete_file', file_id=file.id) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this file?');">
+                                <button type="submit" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.9em;">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="margin-top: 40px; padding: 20px; background: hsl(0 0% 12%); border-radius: 8px; text-align: center;">
+            <p style="color: hsl(0 0% 60%);">No files uploaded yet.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('file');
+    const selectedFilesDiv = document.getElementById('selectedFiles');
+    const fileList = document.getElementById('fileList');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const uploadForm = document.getElementById('uploadForm');
+    let selectedFiles = [];
+
+    // Click to browse
+    uploadArea.addEventListener('click', () => {
+        fileInput.click();
+    });
+
+    // File input change
+    fileInput.addEventListener('change', (e) => {
+        handleFiles(Array.from(e.target.files));
+    });
+
+    // Drag and drop
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('drag-over');
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('drag-over');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('drag-over');
+        const files = Array.from(e.dataTransfer.files);
+        handleFiles(files);
+    });
+
+    function handleFiles(files) {
+        // Filter allowed files
+        const allowedExtensions = ['pdf', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'];
+        const validFiles = files.filter(file => {
+            const ext = file.name.split('.').pop().toLowerCase();
+            return allowedExtensions.includes(ext);
+        });
+
+        if (validFiles.length !== files.length) {
+            alert('Some files were not added. Only PDF, PPT, PPTX, and image files are allowed.');
+        }
+
+        // Add to selected files
+        validFiles.forEach(file => {
+            if (!selectedFiles.find(f => f.name === file.name && f.size === file.size)) {
+                selectedFiles.push(file);
+            }
+        });
+
+        updateFileList();
+    }
+
+    function updateFileList() {
+        fileList.innerHTML = '';
+        selectedFiles.forEach((file, index) => {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+            fileItem.innerHTML = `
+                <div class="file-item-info">
+                    <span class="file-item-name">${file.name}</span>
+                    <span class="file-item-size">(${formatFileSize(file.size)})</span>
+                </div>
+                <button type="button" class="file-item-remove" onclick="removeFile(${index})">Remove</button>
+            `;
+            fileList.appendChild(fileItem);
+        });
+
+        if (selectedFiles.length > 0) {
+            selectedFilesDiv.classList.add('show');
+            uploadBtn.disabled = false;
+        } else {
+            selectedFilesDiv.classList.remove('show');
+            uploadBtn.disabled = true;
+        }
+    }
+
+    function removeFile(index) {
+        selectedFiles.splice(index, 1);
+        updateFileList();
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
+    // Handle form submission - upload files one by one
+    uploadForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        if (selectedFiles.length === 0) return;
+
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = 'Uploading...';
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        // Upload files one by one
+        for (let i = 0; i < selectedFiles.length; i++) {
+            const file = selectedFiles[i];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('{{ url_for("admin_upload_file", course_id=course.id) }}', {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    successCount++;
+                } else {
+                    throw new Error(data.error || `Failed to upload ${file.name}`);
+                }
+            } catch (error) {
+                errorCount++;
+                console.error(`Error uploading ${file.name}:`, error);
+            }
+        }
+
+        // Show results and reload
+        if (errorCount === 0) {
+            alert(`Successfully uploaded ${successCount} file(s)!`);
+            window.location.reload();
+        } else {
+            alert(`Uploaded ${successCount} file(s) successfully. ${errorCount} file(s) failed.`);
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = 'Upload Files';
+        }
+    });
+</script>
+{% endblock %}

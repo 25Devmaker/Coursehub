@@ -84,6 +84,9 @@
                 {% if chapters %}
                 <a href="{{ url_for('view_chapter', chapter_id=chapters[0].id) }}" class="btn btn-primary">Start with Chapter 1</a>
                 {% endif %}
+                <div style="margin-top: 20px;">
+                    <a href="{{ url_for('view_course_files', course_id=course.id) }}" class="btn btn-secondary">View Course Files</a>
+                </div>
                 {% if all_completed %}
                 <div style="margin-top: 24px;">
                     <p>Congratulations! You have completed all chapters.</p>

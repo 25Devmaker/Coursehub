@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Course Files - {{ course.title }} - CourseHub{% endblock %}
+
+{% block content %}
+<div class="course-view-container">
+    <div class="course-header">
+        <h1>Course Files - {{ course.title }}</h1>
+        <div style="margin-top: 20px;">
+            <a href="{{ url_for('view_course', course_id=course.id) }}" class="btn btn-secondary">← Back to Course</a>
+        </div>
+    </div>
+
+    <div class="course-content">
+        {% if files %}
+        <div class="files-list" style="margin-top: 30px;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 2px solid hsl(0 0% 20%);">
+                        <th style="padding: 12px; text-align: left;">File Name</th>
+                        <th style="padding: 12px; text-align: left;">Type</th>
+                        <th style="padding: 12px; text-align: left;">Size</th>
+                        <th style="padding: 12px; text-align: left;">Uploaded At</th>
+                        <th style="padding: 12px; text-align: left;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file in files %}
+                    <tr style="border-bottom: 1px solid hsl(0 0% 15%);">
+                        <td style="padding: 12px;">{{ file.original_filename }}</td>
+                        <td style="padding: 12px; text-transform: uppercase;">{{ file.file_type }}</td>
+                        <td style="padding: 12px;">
+                            {% if file.file_size < 1024 %}
+                                {{ file.file_size }} B
+                            {% elif file.file_size < 1024 * 1024 %}
+                                {{ "%.2f"|format(file.file_size / 1024) }} KB
+                            {% else %}
+                                {{ "%.2f"|format(file.file_size / (1024 * 1024)) }} MB
+                            {% endif %}
+                        </td>
+                        <td style="padding: 12px;">{{ file.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td style="padding: 12px;">
+                            <a href="{{ url_for('download_file', file_id=file.id) }}" class="btn btn-primary" style="padding: 6px 12px; font-size: 0.9em;">Download</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="margin-top: 30px; padding: 40px; background: hsl(0 0% 12%); border-radius: 8px; text-align: center;">
+            <p style="color: hsl(0 0% 60%); font-size: 1.1em;">No files available for this course yet.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

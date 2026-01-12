@@ -58,6 +58,7 @@
                 <a href="{{ url_for('admin_edit_course', course_id=course.id) }}" class="btn btn-secondary btn-small">Edit</a>
                 <a href="{{ url_for('admin_course_students', course_id=course.id) }}" class="btn btn-primary btn-small">View Students</a>
                 <a href="{{ url_for('admin_add_chapter', course_id=course.id) }}" class="btn btn-secondary btn-small">Add Chapter</a>
+                <a href="{{ url_for('admin_upload_file', course_id=course.id) }}" class="btn btn-secondary btn-small">Upload Files</a>
             </div>
         </div>
         {% endfor %}

@@ -1,10 +1,12 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 import secrets
 import datetime
 import os
+import uuid
 from threading import Timer, Thread
 import smtplib
 from email.mime.text import MIMEText
@@ -21,6 +23,18 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-
 # Ensure instance folder for sqlite exists
 os.makedirs(os.path.join(app.root_path, 'instance'), exist_ok=True)
 
+# Configure upload folder
+UPLOAD_FOLDER = os.path.join(app.root_path, 'uploads', 'course_files')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
+
+# Allowed file extensions
+ALLOWED_EXTENSIONS = {'pdf', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 # Database URL with default to instance sqlite file
 default_sqlite_path = os.path.join(app.root_path, 'instance', 'coursehub.db')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', f'sqlite:///{default_sqlite_path}')
@@ -28,8 +42,13 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
+<<<<<<< HEAD
 app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME', 'yourusername@gmail.com')
 app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD', 'password1234')
+=======
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME', 'your-email@gmail.com')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD', 'your-app-password')
+>>>>>>> bcf4b54 (Update website)
 
 db = SQLAlchemy(app)
 mail = Mail(app)
@@ -65,6 +84,7 @@ class Course(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     chapters = db.relationship('Chapter', backref='course', lazy=True, cascade='all, delete-orphan')
     enrollments = db.relationship('Enrollment', backref='course', lazy=True)
+    files = db.relationship('CourseFile', backref='course', lazy=True, cascade='all, delete-orphan')
 
 class Chapter(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -114,6 +134,16 @@ class ChatMessage(db.Model):
     sender = db.Column(db.String(10), nullable=False)  # 'student' or 'admin'
     message = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+class CourseFile(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
+    filename = db.Column(db.String(255), nullable=False)
+    original_filename = db.Column(db.String(255), nullable=False)
+    file_type = db.Column(db.String(50), nullable=False)  # pdf, ppt, pptx, img, jpg, png, etc.
+    file_size = db.Column(db.Integer, nullable=False)  # in bytes
+    uploaded_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    uploaded_by = db.Column(db.Integer, db.ForeignKey('admin.id'), nullable=True)
 
 # Email sending function
 def send_email(to_email, subject, body):
@@ -936,6 +966,144 @@ def admin_add_chapter(course_id):
     
     return render_template('admin_add_chapter.html', course=course, next_number=next_number)
 
+@app.route('/admin/upload-file/<int:course_id>', methods=['GET', 'POST'])
+def admin_upload_file(course_id):
+    if 'admin_id' not in session:
+        return redirect(url_for('login'))
+    
+    course = Course.query.get_or_404(course_id)
+    
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'error': 'No file selected'}), 400
+            flash('No file selected', 'error')
+            return redirect(url_for('admin_upload_file', course_id=course_id))
+        
+        file = request.files['file']
+        if file.filename == '':
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'error': 'No file selected'}), 400
+            flash('No file selected', 'error')
+            return redirect(url_for('admin_upload_file', course_id=course_id))
+        
+        if file and allowed_file(file.filename):
+            # Secure the filename
+            original_filename = file.filename
+            filename = secure_filename(original_filename)
+            
+            # Generate unique filename to avoid conflicts
+            unique_filename = f"{uuid.uuid4().hex}_{filename}"
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            
+            # Save file
+            file.save(filepath)
+            
+            # Get file size
+            file_size = os.path.getsize(filepath)
+            
+            # Get file extension
+            file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+            
+            # Create database record
+            course_file = CourseFile(
+                course_id=course_id,
+                filename=unique_filename,
+                original_filename=original_filename,
+                file_type=file_ext,
+                file_size=file_size,
+                uploaded_by=session['admin_id']
+            )
+            db.session.add(course_file)
+            db.session.commit()
+            
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': True, 'message': 'File uploaded successfully'})
+            flash('File uploaded successfully', 'success')
+            return redirect(url_for('admin_edit_course', course_id=course_id))
+        else:
+            error_msg = 'Invalid file type. Allowed types: PDF, PPT, PPTX, JPG, JPEG, PNG, GIF, BMP, SVG, WEBP'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'error': error_msg}), 400
+            flash(error_msg, 'error')
+            return redirect(url_for('admin_upload_file', course_id=course_id))
+    
+    # GET request - show upload form
+    files = CourseFile.query.filter_by(course_id=course_id).order_by(CourseFile.uploaded_at.desc()).all()
+    return render_template('admin_upload_file.html', course=course, files=files)
+
+@app.route('/admin/delete-file/<int:file_id>', methods=['POST'])
+def admin_delete_file(file_id):
+    if 'admin_id' not in session:
+        return jsonify({'success': False, 'error': 'Not authorized'})
+    
+    course_file = CourseFile.query.get_or_404(file_id)
+    course_id = course_file.course_id
+    
+    # Delete physical file
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], course_file.filename)
+    if os.path.exists(filepath):
+        os.remove(filepath)
+    
+    # Delete database record
+    db.session.delete(course_file)
+    db.session.commit()
+    
+    flash('File deleted successfully', 'success')
+    return redirect(url_for('admin_upload_file', course_id=course_id))
+
+@app.route('/course/<int:course_id>/files')
+def view_course_files(course_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    course = Course.query.get_or_404(course_id)
+    
+    # Check enrollment
+    enrollment = Enrollment.query.filter_by(
+        student_id=session['user_id'],
+        course_id=course_id,
+        status='approved'
+    ).first()
+    
+    if not enrollment:
+        flash('You must enroll and be approved to access course files', 'error')
+        return redirect(url_for('dashboard'))
+    
+    files = CourseFile.query.filter_by(course_id=course_id).order_by(CourseFile.uploaded_at.desc()).all()
+    return render_template('course_files.html', course=course, files=files)
+
+@app.route('/download-file/<int:file_id>')
+def download_file(file_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    course_file = CourseFile.query.get_or_404(file_id)
+    course = course_file.course
+    
+    # Check enrollment
+    enrollment = Enrollment.query.filter_by(
+        student_id=session['user_id'],
+        course_id=course.id,
+        status='approved'
+    ).first()
+    
+    if not enrollment:
+        flash('You are not authorized to download this file', 'error')
+        return redirect(url_for('dashboard'))
+    
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], course_file.filename)
+    if not os.path.exists(filepath):
+        flash('File not found', 'error')
+        return redirect(url_for('view_course_files', course_id=course.id))
+    
+    return send_from_directory(
+        app.config['UPLOAD_FOLDER'],
+        course_file.filename,
+        as_attachment=True,
+        download_name=course_file.original_filename
+    )
+
 @app.route('/api/mark-notification-read/<int:notification_id>', methods=['POST'])
 def mark_notification_read(notification_id):
     if 'user_id' not in session:
@@ -1028,3 +1196,4 @@ def learning_report(course_id):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
+
